@@ -1,12 +1,7 @@
 from pyspark.sql.functions import current_timestamp, regexp_replace, col, when, coalesce, lit, length
 import os
 
-customers_df_renamed = customers_df.withColumnRenamed("annual_inc", "annual_income")\
-                            .withColumnRenamed("addr_state", "address_state")\
-                            .withColumnRenamed("zip_code", "address_zipcode")\
-                            .withColumnRenamed("country", "address_country")\
-                            .withColumnRenamed("tot_hi_cred_lim", "total_high_credit_limit")\
-                            .withColumnRenamed("annual_inc_joint", "join_annual_income")
+# A. Clean customers.csv
 
 customers_df_ingested = customers_df_renamed.withColumn("ingest_date", current_timestamp())
 

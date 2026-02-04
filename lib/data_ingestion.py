@@ -1,4 +1,4 @@
-
+from pyspark.sql.functions import current_timestamp
 
 def get_customers_schema():
     schema = [
@@ -53,7 +53,8 @@ def get_defaulters_schema():
 
 def read_customers(spark, file_path):
     customers_df = spark.read.csv(file_path, header=True, schema = get_customers_schema())
-    return customers_df
+    customers_df_ingested = customers_df.withColumn("ingest_date", current_timestamp())
+    return customers_df_ingested
 
 def read_loans(spark, file_path):
     loans_df = spark.read.csv(file_path, header=True, schema = get_loans_schema())
