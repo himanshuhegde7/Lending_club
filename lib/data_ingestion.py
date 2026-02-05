@@ -1,24 +1,24 @@
 from pyspark.sql.functions import current_timestamp
 
 def get_customers_schema():
-    schema = [
-        {"name": "member_id", "type": "string"},
-        {"name": "emp_title", "type": "string"},
-        {"name": "emp_length", "type": "string"},
-        {"name": "home_ownership", "type": "string"},
-        {"name": "annual_income", "type": "string"}
-        {"name": "address_state", "type": "string"},
-        {"name": "address_zipcode", "type": "string"}
-        {"name": "address_country", "type": "string"},
-        {"name": "grade", "type": "string"},
-        {"name": "sub_grade", "type": "string"},
-        {"name": "verification_status", "type": "string"},
-        {"name": "total_high_credit_limit", "type": "integer"}
-        {"name": "application_type", "type": "string"}
-        {"name": "join_annual_income", "type": "string"}
-        {"name": "verification_status_joint", "type": "string"}
-        {"name": "ingest_date", "type": "string"}
-    ]
+    schema = """
+        member_id STRING,
+        emp_title STRING,
+        emp_length STRING,
+        home_ownership STRING,
+        annual_income STRING,
+        address_state STRING,
+        address_zipcode STRING,
+        address_country STRING,
+        grade STRING,
+        sub_grade STRING,
+        verification_status STRING,
+        total_high_credit_limit INTEGER,
+        application_type STRING,
+        join_annual_income STRING,
+        verification_status_joint STRING,
+        ingest_date TIMESTAMP
+    """
     return schema
 
 def get_loans_schema():
