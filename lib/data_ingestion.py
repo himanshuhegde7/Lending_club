@@ -16,39 +16,51 @@ def get_customers_schema():
         total_high_credit_limit INTEGER,
         application_type STRING,
         join_annual_income STRING,
-        verification_status_joint STRING,
-        ingest_date TIMESTAMP
+        verification_status_joint STRING
     """
     return schema
 
 def get_loans_schema():
-    schema = [
-        {"name": "loan_id", "type": "integer"},
-        {"name": "customer_id", "type": "integer"},
-        {"name": "loan_amount", "type": "float"},
-        {"name": "loan_start_date", "type": "date"},
-        {"name": "loan_end_date", "type": "date"},
-        {"name": "interest_rate", "type": "float"}
-    ]
+    schema = """
+        loan_id STRING,
+        member_id STRING,
+        loan_amount FLOAT,
+        funded_amount FLOAT,
+        loan_term_months STRING,
+        interest_rate FLOAT,
+        monthly_installment FLOAT,
+        issue_date string,
+        loan_status STRING,
+        loan_purpose STRING,
+        loan_title STRING
+    """
     return schema
 
 def get_repayments_schema():
-    schema = [
-        {"name": "repayment_id", "type": "integer"},
-        {"name": "loan_id", "type": "integer"},
-        {"name": "repayment_amount", "type": "float"},
-        {"name": "repayment_date", "type": "date"}
-    ]
+    schema = """
+        loan_id STRING,
+        total_principal_received FLOAT,
+        total_interest_received FLOAT,
+        total_late_fee_received FLOAT,
+        total_payment_received FLOAT,
+        last_payment_amount FLOAT,
+        last_payment_date STRING,
+        next_payment_date STRING
+    """
     return schema
 
 def get_defaulters_schema():
-    schema = [
-        {"name": "defaulter_id", "type": "integer"},
-        {"name": "customer_id", "type": "integer"},
-        {"name": "loan_id", "type": "integer"},
-        {"name": "default_date", "type": "date"},
-        {"name": "amount_due", "type": "float"}
-    ]
+    schema = """
+        member_id STRING,
+        delinq_2yrs FLOAT,
+        delinq_amnt FLOAT,
+        pub_rec FLOAT,
+        pub_rec_bankruptcies FLOAT,
+        inq_last_6mths FLOAT,
+        total_rec_late_fee FLOAT,
+        mths_since_last_delinq FLOAT,
+        mths_since_last_record FLOAT
+    """
     return schema   
 
 def read_customers(spark, file_path):
@@ -58,12 +70,15 @@ def read_customers(spark, file_path):
 
 def read_loans(spark, file_path):
     loans_df = spark.read.csv(file_path, header=True, schema = get_loans_schema())
-    return loans_df
+    loans_df_ingested = loans_df.withColumn("ingest_date", current_timestamp())
+    return loans_df_ingested
 
 def read_repayments(spark, file_path):
     repayments_df = spark.read.csv(file_path, header=True, schema = get_repayments_schema())
-    return repayments_df
+    repayments_df_ingested = repayments_df.withColumn("ingest_date", current_timestamp())
+    return repayments_df_ingested
 
 def read_defaulters(spark, file_path):
     defaulters_df = spark.read.csv(file_path, header=True, schema = get_defaulters_schema())
-    return defaulters_df
+    defaulters_df_ingested = defaulters_df.withColumn("ingest_date", current_timestamp())
+    return defaulters_df_ingested

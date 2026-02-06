@@ -10,25 +10,63 @@ SparkSession._instantiatedSession = None if SparkSession._instantiatedSession el
 
 spark = SparkSession.builder.appName("LendingClub").master("local[2]").getOrCreate()
 
+"""
+# Load, clean and save customers.csv
 customers_path = "../Lending_club/data/raw/customers.csv"
-
 customers_raw = di.read_customers(spark, customers_path)
-
 customers_cleaned = dt.clean_customers(spark, customers_raw)
-
 customers_cleaned.write \
     .option("header", True) \
     .format("csv") \
     .mode("overwrite") \
-    .option("path", "../Lending_club/data/cleaned/customers_del.csv") \
+    .option("path", "../Lending_club/data/cleaned/delete_customers") \
+    .save()
+"""
+
+"""
+# Load, clean and save loans.csv
+loans_path = "../Lending_club/data/raw/loans.csv"
+loans_raw = di.read_loans(spark, loans_path)
+loans_cleaned = dt.clean_loans(spark, loans_raw)
+loans_cleaned.write \
+    .option("header", True) \
+    .format("csv") \
+    .mode("overwrite") \
+    .option("path", "../Lending_club/data/cleaned/delete_loans") \
+    .save()
+"""
+
+"""
+# Load, clean and save repayments.csv
+repayments_path = "../Lending_club/data/raw/repayments.csv"
+repayments_raw = di.read_repayments(spark, repayments_path)
+repayments_cleaned = dt.clean_repayments(spark, repayments_raw)
+repayments_cleaned.write \
+    .option("header", True) \
+    .format("csv") \
+    .mode("overwrite") \
+    .option("path", "../Lending_club/data/cleaned/delete_repayments") \
+    .save()
+"""
+
+# Load, clean and save delinquencies.csv
+delinquencies_path = "../Lending_club/data/raw/delinquencies.csv"
+delinquencies_raw = di.read_defaulters(spark, delinquencies_path)
+delinquencies_cleaned, delinquencies_public_records = dt.clean_delinquencies(spark, delinquencies_raw)
+delinquencies_cleaned.write \
+    .option("header", True) \
+    .format("csv") \
+    .mode("overwrite") \
+    .option("path", "../Lending_club/data/cleaned/delete_delinquencies") \
+    .save()
+    
+delinquencies_public_records.write \
+    .option("header", True) \
+    .format("csv") \
+    .mode("overwrite") \
+    .option("path", "../Lending_club/data/cleaned/delete_delinquencies_public_records") \
     .save()
 
-#	2. Cleaning loans.csv
-#	a. Write back loans.csv in cleaned folder
-#	3. Cleaning repayments.csv
-#	4. Cleaning delinquencies.csv
-#	a. Write delinquencies.csv
-#	b. Write delinquncies public records.csv
 #	5. Create defaulters details
 #	a. Write defaulters detail records enquiry csv
 #	6. Create a database named lending club
