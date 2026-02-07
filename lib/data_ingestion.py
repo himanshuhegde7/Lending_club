@@ -49,7 +49,7 @@ def get_repayments_schema():
     """
     return schema
 
-def get_defaulters_schema():
+def get_delinquencies_schema():
     schema = """
         member_id STRING,
         delinq_2yrs FLOAT,
@@ -78,7 +78,7 @@ def read_repayments(spark, file_path):
     repayments_df_ingested = repayments_df.withColumn("ingest_date", current_timestamp())
     return repayments_df_ingested
 
-def read_defaulters(spark, file_path):
-    defaulters_df = spark.read.csv(file_path, header=True, schema = get_defaulters_schema())
-    defaulters_df_ingested = defaulters_df.withColumn("ingest_date", current_timestamp())
-    return defaulters_df_ingested
+def read_delinquencies(spark, file_path):
+    delinquencies_df = spark.read.csv(file_path, header=True, schema = get_delinquencies_schema())
+    delinquencies_df_ingested = delinquencies_df.withColumn("ingest_date", current_timestamp())
+    return delinquencies_df_ingested

@@ -1,15 +1,22 @@
-from pyspark.sql.functions import current_timestamp, regexp_replace, col, when, coalesce, lit, length
+from pyspark.sql.functions import (
+    current_timestamp, 
+    regexp_replace, 
+    col, 
+    when, 
+    coalesce, 
+    lit, 
+    length
+)
 import os
 
 # A. Clean customers.csv
 def clean_customers(spark, customers_df):
-    # Unnecessary?: customers_df = customers_df.withColumnRenamed("member_id", "customer_id")
     # Remove duplicate records
     customers_df_distinct = customers_df.distinct()
     
     # Filter out records with null or empty annual_income
     customers_df_distinct.createOrReplaceTempView("customers")
-    customers_income_filtered = spark.sql("select * from customers where annual_income is not null")
+    customers_income_filtered = spark.sql("SELECT * FROM customers WHERE annual_income IS NOT null")
 
     # Extract numeric part from emp_length and convert it to integer. Eg: "9 years" to 9, n/a to null
     customers_emplength_cleaned = customers_income_filtered.withColumn(
@@ -19,7 +26,7 @@ def clean_customers(spark, customers_df):
 
     # Replace nulls in emp_length with average of the column
     customers_emplength_int.createOrReplaceTempView("customers")
-    avg_emp_length = spark.sql("select floor(avg(emp_length)) as avg_emp_length from customers").collect()
+    avg_emp_length = spark.sql("SELECT FLOOR(AVG(emp_length)) AS avg_emp_length FROM customers").collect()
     avg_emp_duration = avg_emp_length[0][0]
     customers_emplength_replaced = customers_emplength_int.na.fill(avg_emp_duration, subset=['emp_length'])
     
@@ -27,7 +34,6 @@ def clean_customers(spark, customers_df):
     customers_state_cleaned = customers_emplength_replaced.withColumn(
         "address_state", when(length(col("address_state"))> 2, "NA")
         .otherwise(col("address_state")))
-    
     return customers_state_cleaned
 
 
@@ -80,8 +86,44 @@ def clean_repayments(spark, repayments_df):
     
     return loans_payments_ndate_fixed_df
 
-def clean_delinquencies(spark, defaulters_df):
-    return
+def clean_delinquencies(spark, delinquencies_df):
+    # Convert the delinq_2yrs column to integer and replaces nulls with 0
+    delinquencies_processed_df = delinquencies_df.withColumn(
+        "delinq_2yrs", col("delinq_2yrs").cast("integer")).fillna(0, subset = ["delinq_2yrs"])
+    
+    # Create a dataframe with members having at least one delinquency
+    delinquencies_processed_df.createOrReplaceTempView("delinquencies")
+    delinquencies_cleaned = spark.sql("""
+        SELECT member_id, delinq_2yrs, delinq_amnt, int(mths_since_last_delinq) 
+        FROM delinquencies 
+        WHERE delinq_2yrs > 0 OR mths_since_last_delinq > 0
+        """)
+    
+    # Useless? - create a dataframe with members having enquiries or public records of bankruptcy
+    #delinquencies_public_records_enq = spark.sql("""
+    #    SELECT member_id 
+    #    FROM delinquencies 
+    #    WHERE pub_rec > 0.0 OR pub_rec_bankruptcies > 0.0 OR inq_last_6mths > 0.0
+    #    """)
+    
+    # Creating defaulters details - public records
+    loans_def_p_pub_rec_df = delinquencies_processed_df.withColumn(
+    "pub_rec", col("pub_rec").cast("integer")).fillna(0, subset = ["pub_rec"])
+    
+    loans_def_p_pub_rec_bankruptcies_df = loans_def_p_pub_rec_df.withColumn(
+    "pub_rec_bankruptcies", col("pub_rec_bankruptcies").cast("integer")).fillna(0, subset = ["pub_rec_bankruptcies"])
+    
+    loans_def_p_inq_last_6mths_df = loans_def_p_pub_rec_bankruptcies_df.withColumn(
+    "inq_last_6mths", col("inq_last_6mths").cast("integer")).fillna(0, subset = ["inq_last_6mths"])
+    
+    loans_def_p_inq_last_6mths_df.createOrReplaceTempView("loan_defaulters")
+
+    delinquencies_public_records = spark.sql("""
+    SELECT member_id, pub_rec, pub_rec_bankruptcies, inq_last_6mths 
+    FROM loan_defaulters
+    """)
+    
+    return delinquencies_cleaned, delinquencies_public_records
 
 def final_cleaning(spark):
     return
