@@ -9,7 +9,6 @@ os.environ['JAVA_HOME'] = '/opt/homebrew/Cellar/openjdk@21/21.0.9/libexec/openjd
 SparkSession._instantiatedSession = None if SparkSession._instantiatedSession else None
 spark = SparkSession.builder.appName("LendingClub").master("local[2]").getOrCreate()
 
-"""
 # Load, clean and save customers.csv
 customers_path = "../Lending_club/data/raw/customers.csv"
 customers_raw = di.read_customers(spark, customers_path)
@@ -20,7 +19,7 @@ customers_cleaned.write
     .option("header", True)
     .format("csv")
     .mode("overwrite")
-    .option("path", "../Lending_club/data/cleaned/delete_customers")
+    .option("path", "../Lending_club/data/cleaned/customers")
     .save()
 )
 
@@ -29,7 +28,7 @@ customers_bad_data.write
     .option("header", True)
     .format("csv")
     .mode("overwrite")
-    .option("path", "../Lending_club/data/cleaned/delete_customers_bad_data")
+    .option("path", "../Lending_club/data/cleaned/customers_bad_data")
     .save()
 )
 
@@ -44,7 +43,7 @@ loans_cleaned.write
     .option("header", True)
     .format("csv")
     .mode("overwrite")
-    .option("path", "../Lending_club/data/cleaned/delete_loans")
+    .option("path", "../Lending_club/data/cleaned/loans")
     .save()
 )
 
@@ -58,7 +57,7 @@ repayments_cleaned.write
     .option("header", True)
     .format("csv")
     .mode("overwrite")
-    .option("path", "../Lending_club/data/cleaned/delete_repayments")
+    .option("path", "../Lending_club/data/cleaned/repayments")
     .save()
 )
 
@@ -72,7 +71,7 @@ delinquencies_cleaned.write
     .option("header", True)
     .format("csv")
     .mode("overwrite")
-    .option("path", "../Lending_club/data/cleaned/delete_delinquencies")
+    .option("path", "../Lending_club/data/cleaned/delinquencies")
     .save()
 )
 
@@ -81,7 +80,7 @@ delinquencies_bad_data.write
     .option("header", True)
     .format("csv")
     .mode("overwrite")
-    .option("path", "../Lending_club/data/cleaned/delete_delinquencies_bad_data")
+    .option("path", "../Lending_club/data/cleaned/delinquencies_bad_data")
     .save()
 )
 
@@ -90,11 +89,10 @@ delinquencies_public_records.write
     .option("header", True)
     .format("csv")
     .mode("overwrite")
-    .option("path", "../Lending_club/data/cleaned/delete_delinquencies_public_records")
+    .option("path", "../Lending_club/data/cleaned/delinquencies_public_records")
     .save()
 )
 
-"""
 # Create permanent tables on the above cleaned data
 
 spark.sql("create database lending_club")
@@ -115,7 +113,7 @@ spark.sql("""CREATE EXTERNAL TABLE lending_club.customers(
     sub_grade STRING, verification_status STRING, total_high_credit_limit FLOAT,
     application_type STRING, join_annual_income FLOAT, 
     verification_status_joint STRING, ingest_date TIMESTAMP)
-    using csv location  '/Users/himanshuhegde/Desktop/Lending_club/data/cleaned/delete_customers'
+    using csv location  '/Users/himanshuhegde/Desktop/Lending_club/data/cleaned/customers'
     options('header'='true', 'inferSchema'='false')
     """)
 
@@ -123,7 +121,7 @@ spark.sql("""CREATE EXTERNAL TABLE lending_club.loans(
     loan_id STRING, member_id STRING, loan_amount FLOAT, funded_amount FLOAT,
     loan_term_years INTEGER, interest_rate FLOAT, monthly_installment FLOAT, issue_date STRING,
     loan_status STRING, loan_purpose STRING, loan_title STRING, ingest_date TIMESTAMP)
-    using csv location  '/Users/himanshuhegde/Desktop/Lending_club/data/cleaned/delete_loans'
+    using csv location  '/Users/himanshuhegde/Desktop/Lending_club/data/cleaned/loans'
     options('header'='true', 'inferSchema'='false')
     """)
 
@@ -133,33 +131,32 @@ spark.sql("""CREATE EXTERNAL TABLE lending_club.repayments(
     total_payment_received FLOAT,last_payment_amount FLOAT,
     last_payment_date string,next_payment_date string,
     ingest_date TIMESTAMP)
-    using csv location  '/Users/himanshuhegde/Desktop/Lending_club/data/cleaned/delete_repayments'
+    using csv location  '/Users/himanshuhegde/Desktop/Lending_club/data/cleaned/repayments'
     options('header'='true', 'inferSchema'='false')
     """)
 
 spark.sql("""CREATE EXTERNAL TABLE lending_club.delinquencies(
     member_id string, delinq_2yrs INTEGER, delinq_amnt FLOAT,
     mths_since_last_delinq INTEGER)
-    using csv location  '/Users/himanshuhegde/Desktop/Lending_club/data/cleaned/delete_delinquencies'
+    using csv location  '/Users/himanshuhegde/Desktop/Lending_club/data/cleaned/delinquencies'
     options('header'='true', 'inferSchema'='false')
     """)
 
 spark.sql("""CREATE EXTERNAL TABLE lending_club.delinquencies_public_records(
     member_id string, pub_rec INTEGER, pub_rec_bankruptcies INTEGER, 
     inq_last_6mths INTEGER)
-    using csv location  '/Users/himanshuhegde/Desktop/Lending_club/data/cleaned/delete_delinquencies_public_records'
+    using csv location  '/Users/himanshuhegde/Desktop/Lending_club/data/cleaned/delinquencies_public_records'
     options('header'='true', 'inferSchema'='false')
     """)
 
+# Calculating credit score
+final_credit_score = dt.calculate_credit_score(spark)
 
-
-#   7. Remove duplicate member ids in each file
-#	a. Save the duplicate member ids as a separate csv in 'Bad data folder'
-#	b. Re-save the above permanent tables after removing duplicate member ids, as parquet format
-#	c. Save in cleaned_new. Customers, loan defaulters delinq, loan defaulters detail rec enq
-#	8. Create external tables for the three new parquets in 7
-#	9. Calculating credit score
-#	a. Calculate points for payments history
-#	b. Calculate points for defaulters history
-#	c. Calculate points for financial health
-#	d. Final credit score calculate, add to database, save as parquet
+(
+final_credit_score.write
+.option("header", True)
+.format("csv")
+.mode("overwrite")
+.option("path", "/Users/himanshuhegde/Desktop/Lending_club/data/processed/credit_score")
+.save()
+)

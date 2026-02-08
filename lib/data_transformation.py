@@ -152,5 +152,201 @@ def clean_delinquencies(spark, delinquencies_df):
     
     return delinquencies_cleaned, delinquencies_public_records, bad_data_delinquencies
 
-def final_cleaning(spark):
-    return
+def calculate_credit_score(spark):
+    credit_score_tiers = {
+    "unacceptable": 0,
+    "very_bad": 100,
+    "bad": 250,
+    "good": 500,
+    "very_good": 650,
+    "excellent": 800
+    }
+    
+    # Criterion 1 - Payment history lph
+    ph_df = spark.sql(f"""
+    SELECT
+        c.member_id,
+        CASE
+            WHEN p.last_payment_amount >= (c.monthly_installment * 0.5)
+                AND p.last_payment_amount < c.monthly_installment
+                THEN {credit_score_tiers["very_bad"]}
+            WHEN p.last_payment_amount = c.monthly_installment
+                THEN {credit_score_tiers["good"]}
+            WHEN p.last_payment_amount > c.monthly_installment
+                AND p.last_payment_amount <= (c.monthly_installment * 1.5)
+                THEN {credit_score_tiers["very_good"]}
+            WHEN p.last_payment_amount > (c.monthly_installment * 1.5)
+                THEN {credit_score_tiers["excellent"]}
+            ELSE {credit_score_tiers["unacceptable"]}
+        END AS last_payment_pts,
+
+        CASE
+            WHEN p.total_payment_received >= (c.funded_amount * 0.5)
+                THEN {credit_score_tiers["very_good"]}
+            WHEN p.total_payment_received < (c.funded_amount * 0.5)
+                AND p.total_payment_received > 0
+                THEN {credit_score_tiers["good"]}
+            WHEN p.total_payment_received = 0
+                OR p.total_payment_received IS NULL
+                THEN {credit_score_tiers["unacceptable"]}
+        END AS total_payment_pts
+
+    FROM lending_club.repayments p
+    JOIN lending_club.loans c
+        ON c.loan_id = p.loan_id
+    """)
+    ph_df.createOrReplaceTempView("ph_pts")
+    
+    # Criterion 2 - loan defaulters history ldh
+    ldh_ph_df = spark.sql(f"""
+        select p.*,
+        CASE 
+        WHEN d.delinq_2yrs = 0 
+            THEN {credit_score_tiers["excellent"]} 
+        WHEN d.delinq_2yrs BETWEEN 1 AND 2 
+            THEN {credit_score_tiers["bad"]} 
+        WHEN d.delinq_2yrs BETWEEN 3 AND 5 
+            THEN {credit_score_tiers["very_bad"]} 
+        WHEN d.delinq_2yrs > 5 OR d.delinq_2yrs IS NULL 
+            THEN {credit_score_tiers["unacceptable"]} 
+        END AS delinq_pts, 
+        CASE 
+        WHEN l.pub_rec = 0 
+            THEN {credit_score_tiers["excellent"]} 
+        WHEN l.pub_rec BETWEEN 1 AND 2 
+            THEN {credit_score_tiers["bad"]} 
+        WHEN l.pub_rec BETWEEN 3 AND 5 
+            THEN {credit_score_tiers["very_bad"]} 
+        WHEN l.pub_rec > 5 OR l.pub_rec IS NULL 
+            THEN {credit_score_tiers["very_bad"]} 
+        END AS public_records_pts, 
+        CASE 
+        WHEN l.pub_rec_bankruptcies = 0 
+            THEN {credit_score_tiers["excellent"]} 
+        WHEN l.pub_rec_bankruptcies BETWEEN 1 AND 2 
+            THEN {credit_score_tiers["bad"]} 
+        WHEN l.pub_rec_bankruptcies BETWEEN 3 AND 5 
+            THEN {credit_score_tiers["very_bad"]} 
+        WHEN l.pub_rec_bankruptcies > 5 OR l.pub_rec_bankruptcies IS NULL 
+            THEN {credit_score_tiers["very_bad"]}
+        END as public_bankruptcies_pts, 
+        CASE 
+        WHEN l.inq_last_6mths = 0 
+            THEN {credit_score_tiers["excellent"]} 
+        WHEN l.inq_last_6mths BETWEEN 1 AND 2 
+            THEN {credit_score_tiers["bad"]} 
+        WHEN l.inq_last_6mths BETWEEN 3 AND 5 
+            THEN {credit_score_tiers["very_bad"]} 
+        WHEN l.inq_last_6mths > 5 OR l.inq_last_6mths IS NULL 
+            THEN {credit_score_tiers["unacceptable"]} 
+        END AS enq_pts 
+        FROM lending_club.delinquencies_public_records l 
+        INNER JOIN lending_club.delinquencies d ON d.member_id = l.member_id  
+        INNER JOIN ph_pts p ON p.member_id = l.member_id
+        """)
+    ldh_ph_df.createOrReplaceTempView("ldh_ph_pts")
+    
+    # Criterion 3 - financial health fh
+    fh_ldh_ph_df = spark.sql(f"""select ldef.*, 
+    CASE 
+    WHEN LOWER(l.loan_status) LIKE '%fully paid%'
+        THEN {credit_score_tiers["excellent"]} 
+    WHEN LOWER(l.loan_status) LIKE '%current%' 
+        THEN {credit_score_tiers["good"]} 
+    WHEN LOWER(l.loan_status) LIKE '%in grace period%' 
+        THEN {credit_score_tiers["bad"]} 
+    WHEN LOWER(l.loan_status) LIKE '%late (16-30 days)%' OR LOWER(l.loan_status) LIKE '%late (31-120 days)%' 
+        THEN {credit_score_tiers["very_bad"]} 
+    WHEN LOWER(l.loan_status) LIKE '%charged off%' 
+        THEN {credit_score_tiers["unacceptable"]}
+    else {credit_score_tiers["unacceptable"]} 
+    END AS loan_status_pts, 
+    CASE 
+    WHEN LOWER(a.home_ownership) LIKE '%own' 
+        THEN {credit_score_tiers["excellent"]} 
+    WHEN LOWER(a.home_ownership) LIKE '%rent' 
+        THEN {credit_score_tiers["good"]} 
+    WHEN LOWER(a.home_ownership) LIKE '%mortgage' 
+        THEN {credit_score_tiers["bad"]} 
+    WHEN LOWER(a.home_ownership) LIKE '%any' OR LOWER(a.home_ownership) IS NULL 
+        THEN {credit_score_tiers["very_bad"]} 
+    END AS home_pts, 
+    CASE 
+    WHEN l.funded_amount <= (a.total_high_credit_limit * 0.10) 
+        THEN {credit_score_tiers["excellent"]} 
+    WHEN l.funded_amount > (a.total_high_credit_limit * 0.10) AND l.funded_amount <= (a.total_high_credit_limit * 0.20) 
+        THEN {credit_score_tiers["very_good"]} 
+    WHEN l.funded_amount > (a.total_high_credit_limit * 0.20) AND l.funded_amount <= (a.total_high_credit_limit * 0.30) 
+        THEN {credit_score_tiers["good"]} 
+    WHEN l.funded_amount > (a.total_high_credit_limit * 0.30) AND l.funded_amount <= (a.total_high_credit_limit * 0.50) 
+        THEN {credit_score_tiers["bad"]} 
+    WHEN l.funded_amount > (a.total_high_credit_limit * 0.50) AND l.funded_amount <= (a.total_high_credit_limit * 0.70) 
+        THEN {credit_score_tiers["very_bad"]} 
+    WHEN l.funded_amount > (a.total_high_credit_limit * 0.70) 
+        THEN {credit_score_tiers["unacceptable"]}
+    else {credit_score_tiers["unacceptable"]} 
+    END AS credit_limit_pts, 
+    CASE 
+    WHEN (a.grade) = 'A' and (a.sub_grade)='A1' 
+        THEN {credit_score_tiers["excellent"]} 
+    WHEN (a.grade) = 'A' and (a.sub_grade)='A2' 
+        THEN ({credit_score_tiers["excellent"]} * 0.95) 
+    WHEN (a.grade) = 'A' and (a.sub_grade)='A3' 
+        THEN ({credit_score_tiers["excellent"]} * 0.90) 
+    WHEN (a.grade) = 'A' and (a.sub_grade)='A4' 
+        THEN ({credit_score_tiers["excellent"]} * 0.85) 
+    WHEN (a.grade) = 'A' and (a.sub_grade)='A5' 
+        THEN ({credit_score_tiers["excellent"]} * 0.80) 
+    WHEN (a.grade) = 'B' and (a.sub_grade)='B1' 
+        THEN {credit_score_tiers["very_good"]} 
+    WHEN (a.grade) = 'B' and (a.sub_grade)='B2' 
+        THEN ({credit_score_tiers["very_good"]} * 0.95) 
+    WHEN (a.grade) = 'B' and (a.sub_grade)='B3' 
+        THEN ({credit_score_tiers["very_good"]} * 0.90) 
+    WHEN (a.grade) = 'B' and (a.sub_grade)='B4' 
+        THEN ({credit_score_tiers["very_good"]} * 0.85) 
+    WHEN (a.grade) = 'B' and (a.sub_grade)='B5' 
+        THEN ({credit_score_tiers["very_good"]} * 0.80) 
+    WHEN (a.grade) = 'C' and (a.sub_grade)='C1' 
+        THEN {credit_score_tiers["good"]} 
+    WHEN (a.grade) = 'C' and (a.sub_grade)='C2' 
+        THEN ({credit_score_tiers["good"]} * 0.95) 
+    WHEN (a.grade) = 'C' and (a.sub_grade)='C3' 
+        THEN ({credit_score_tiers["good"]} * 0.90) 
+    WHEN (a.grade) = 'C' and (a.sub_grade)='C4' 
+        THEN ({credit_score_tiers["good"]} * 0.85) 
+    WHEN (a.grade) = 'C' and (a.sub_grade)='C5' 
+        THEN ({credit_score_tiers["good"]} * 0.80) 
+    WHEN (a.grade) = 'D' and (a.sub_grade)='D1' THEN ({credit_score_tiers["bad"]}) 
+    WHEN (a.grade) = 'D' and (a.sub_grade)='D2' THEN ({credit_score_tiers["bad"]} * 0.95) 
+    WHEN (a.grade) = 'D' and (a.sub_grade)='D3' THEN ({credit_score_tiers["bad"]} * 0.90) 
+    WHEN (a.grade) = 'D' and (a.sub_grade)='D4' THEN ({credit_score_tiers["bad"]} * 0.85) 
+    WHEN (a.grade) = 'D' and (a.sub_grade)='D5' THEN ({credit_score_tiers["bad"]} * 0.80) 
+    WHEN (a.grade) = 'E' and (a.sub_grade)='E1' THEN {credit_score_tiers["very_bad"]} 
+    WHEN (a.grade) = 'E' and (a.sub_grade)='E2' THEN ({credit_score_tiers["very_bad"]} * 0.95) 
+    WHEN (a.grade) = 'E' and (a.sub_grade)='E3' THEN ({credit_score_tiers["very_bad"]} * 0.90) 
+    WHEN (a.grade) = 'E' and (a.sub_grade)='E4' THEN ({credit_score_tiers["very_bad"]} * 0.85) 
+    WHEN (a.grade) = 'E' and (a.sub_grade)='E5' THEN ({credit_score_tiers["very_bad"]} * 0.80) 
+    WHEN (a.grade) in ('F', 'G') THEN {credit_score_tiers["unacceptable"]} 
+    END AS grade_pts 
+    FROM ldh_ph_pts ldef 
+    INNER JOIN lending_club.loans l ON ldef.member_id = l.member_id 
+    INNER JOIN lending_club.customers a ON a.member_id = ldef.member_id
+   """) 
+    fh_ldh_ph_df.createOrReplaceTempView("fh_ldh_ph_pts")
+
+    # Final Credit Score Calculation
+    # 1. Payment History = 20%
+    # 2. Loan Defaults = 45%
+    # 3. Financial Health = 35%
+
+    credit_score = spark.sql("""SELECT member_id, 
+        ((last_payment_pts+total_payment_pts)*0.20) as payment_history_pts, 
+        ((delinq_pts + public_records_pts + public_bankruptcies_pts + enq_pts) * 0.45) as defaulters_history_pts, 
+        ((loan_status_pts + home_pts + credit_limit_pts + grade_pts)*0.35) as financial_health_pts 
+        FROM fh_ldh_ph_pts""")
+    
+    final_credit_score = credit_score.withColumn(
+    'credit_score', credit_score.payment_history_pts + credit_score.defaulters_history_pts + credit_score.financial_health_pts)
+    
+    return final_credit_score
