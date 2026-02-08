@@ -34,7 +34,24 @@ def clean_customers(spark, customers_df):
     customers_state_cleaned = customers_emplength_replaced.withColumn(
         "address_state", when(length(col("address_state"))> 2, "NA")
         .otherwise(col("address_state")))
-    return customers_state_cleaned
+    
+    bad_data_customers = spark.sql("""SELECT * FROM customers 
+        WHERE member_id IN (
+            SELECT member_id
+            FROM customers
+            GROUP BY member_id
+            HAVING COUNT(*) > 1)
+        """)
+    
+    customers_memberid_cleaned = spark.sql("""SELECT * FROM customers 
+    WHERE member_id IN (
+        SELECT member_id
+        FROM customers
+        GROUP BY member_id
+        HAVING COUNT(*) = 1)
+    """)
+    
+    return customers_memberid_cleaned, bad_data_customers
 
 
 def clean_loans(spark, loans_df):
@@ -87,8 +104,25 @@ def clean_repayments(spark, repayments_df):
     return loans_payments_ndate_fixed_df
 
 def clean_delinquencies(spark, delinquencies_df):
+    delinquencies_df.createOrReplaceTempView("delinquencies")
+    bad_data_delinquencies = spark.sql("""SELECT * FROM delinquencies 
+        WHERE member_id IN (
+            SELECT member_id
+            FROM delinquencies
+            GROUP BY member_id
+            HAVING COUNT(*) > 1)
+        """)
+    
+    delinquencies_memberid_cleaned = spark.sql("""SELECT * FROM delinquencies 
+        WHERE member_id IN (
+            SELECT member_id
+            FROM delinquencies
+            GROUP BY member_id
+            HAVING COUNT(*) = 1)
+        """)
+    
     # Convert the delinq_2yrs column to integer and replaces nulls with 0
-    delinquencies_processed_df = delinquencies_df.withColumn(
+    delinquencies_processed_df = delinquencies_memberid_cleaned.withColumn(
         "delinq_2yrs", col("delinq_2yrs").cast("integer")).fillna(0, subset = ["delinq_2yrs"])
     
     # Create a dataframe with members having at least one delinquency
@@ -98,13 +132,6 @@ def clean_delinquencies(spark, delinquencies_df):
         FROM delinquencies 
         WHERE delinq_2yrs > 0 OR mths_since_last_delinq > 0
         """)
-    
-    # Useless? - create a dataframe with members having enquiries or public records of bankruptcy
-    #delinquencies_public_records_enq = spark.sql("""
-    #    SELECT member_id 
-    #    FROM delinquencies 
-    #    WHERE pub_rec > 0.0 OR pub_rec_bankruptcies > 0.0 OR inq_last_6mths > 0.0
-    #    """)
     
     # Creating defaulters details - public records
     loans_def_p_pub_rec_df = delinquencies_processed_df.withColumn(
@@ -123,7 +150,7 @@ def clean_delinquencies(spark, delinquencies_df):
     FROM loan_defaulters
     """)
     
-    return delinquencies_cleaned, delinquencies_public_records
+    return delinquencies_cleaned, delinquencies_public_records, bad_data_delinquencies
 
 def final_cleaning(spark):
     return

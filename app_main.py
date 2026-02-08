@@ -13,7 +13,7 @@ spark = SparkSession.builder.appName("LendingClub").master("local[2]").getOrCrea
 # Load, clean and save customers.csv
 customers_path = "../Lending_club/data/raw/customers.csv"
 customers_raw = di.read_customers(spark, customers_path)
-customers_cleaned = dt.clean_customers(spark, customers_raw)
+customers_cleaned, customers_bad_data = dt.clean_customers(spark, customers_raw)
 
 (
 customers_cleaned.write
@@ -21,6 +21,15 @@ customers_cleaned.write
     .format("csv")
     .mode("overwrite")
     .option("path", "../Lending_club/data/cleaned/delete_customers")
+    .save()
+)
+
+(
+customers_bad_data.write
+    .option("header", True)
+    .format("csv")
+    .mode("overwrite")
+    .option("path", "../Lending_club/data/cleaned/delete_customers_bad_data")
     .save()
 )
 
@@ -56,7 +65,7 @@ repayments_cleaned.write
 # Load, clean and save delinquencies.csv
 delinquencies_path = "../Lending_club/data/raw/delinquencies.csv"
 delinquencies_raw = di.read_delinquencies(spark, delinquencies_path)
-delinquencies_cleaned, delinquencies_public_records = dt.clean_delinquencies(spark, delinquencies_raw)
+delinquencies_cleaned, delinquencies_public_records, delinquencies_bad_data = dt.clean_delinquencies(spark, delinquencies_raw)
 
 (
 delinquencies_cleaned.write
@@ -64,6 +73,15 @@ delinquencies_cleaned.write
     .format("csv")
     .mode("overwrite")
     .option("path", "../Lending_club/data/cleaned/delete_delinquencies")
+    .save()
+)
+
+(   
+delinquencies_bad_data.write
+    .option("header", True)
+    .format("csv")
+    .mode("overwrite")
+    .option("path", "../Lending_club/data/cleaned/delete_delinquencies_bad_data")
     .save()
 )
 
@@ -132,6 +150,7 @@ spark.sql("""CREATE EXTERNAL TABLE lending_club.delinquencies_public_records(
     using csv location  '/Users/himanshuhegde/Desktop/Lending_club/data/cleaned/delete_delinquencies_public_records'
     options('header'='true', 'inferSchema'='false')
     """)
+
 
 
 #   7. Remove duplicate member ids in each file
